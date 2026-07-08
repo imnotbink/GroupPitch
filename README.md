@@ -1,7 +1,7 @@
 # Group Pitch — Max for Live
 
-One knob on your **Group track** that transposes the MIDI of all its child
-tracks at once — non-destructively. Clip notes don't move and no audio is
+One knob on your **Group track** that transposes the MIDI through ableton's "pitch" device of all its child
+tracks (which have the "pitch" device) at once — non-destructively. Clip notes don't move and no audio is
 repitched; knob back to 0 and everything returns to its own setting. Each of 
 the group's child must have ableton's native "pitch" device to be affected.
 
