@@ -1,8 +1,9 @@
 # Group Pitch — Max for Live
 
-One knob on your **Group track** that transposes the MIDI of all its child
-tracks at once — non-destructively. Clip notes don't move and no audio is
-repitched; knob back to 0 and everything returns to its own setting.
+One knob on your **Group track** that sets the pitch of every instrument
+under it — non-destructively. Clip notes don't move and no audio is
+repitched. The knob **is** the pitch: whatever it reads, every child reads.
+Knob at 0 = everything at 0.
 
 ## The main device (use this one)
 
@@ -28,8 +29,8 @@ A Group track carries no MIDI (it only sums its children's audio), so nothing
 on the group can transpose MIDI directly. Instead this device uses the Live
 API:
 
-- It detects the Group track it's sitting on and finds its child tracks
-  automatically.
+- It detects the Group track it's sitting on and finds every track beneath
+  it automatically, sub-groups included.
 - **MIDI children:** it drives the native Ableton **Pitch** device on each —
   so each child MIDI track needs a stock Pitch dropped on it
   (Browser → MIDI Effects → Pitch).
@@ -37,9 +38,11 @@ API:
   track (session + arrangement) — the same semitone control you'd turn in
   clip view.
 
-The knob is an **offset**, not an absolute value: it adds to whatever each
-Pitch device / clip Transpose was already set to. Dial a child's own Pitch or
-clip Transpose where you want it, then Rescan — that becomes its new baseline.
+The knob is **absolute**, not an offset. Every Pitch device and clip
+Transpose under the group is set to the knob value, so everything under the
+group is always in the same key as everything else. A track you just added, a
+track you duplicated from one that was already pitched, and a track whose
+Pitch device you nudged by hand all land in exactly the same place.
 
 The status line tells you what it's driving, e.g.:
 
@@ -54,7 +57,9 @@ The status line tells you what it's driving, e.g.:
 2. Drop Ableton's stock **Pitch** on each child MIDI track.
 3. Turn **Semitones**. Every child transposes together, live. Clips look
    untouched; nothing is repitched as audio.
-4. Added/removed tracks, clips, or Pitch devices? Click **scan** (Rescan).
+4. Add or remove tracks, instruments, Pitch devices or clips freely — the
+   device watches the group and picks the change up by itself. (The **scan**
+   button is still there as a manual nudge; you shouldn't need it.)
 
 ### Install permanently (recommended)
 
@@ -83,19 +88,20 @@ templates. If Live ever rejects one:
 ## Notes / limits
 
 - Needs Max for Live (Live Suite, or the M4L add-on).
-- Direct children only — tracks inside a nested sub-group need a copy of the
-  device on *that* sub-group instead.
+- Works on nested groups: it walks the whole tree under the group it sits on,
+  so a group of groups of instruments is driven all the way down. If a
+  sub-group has its own copy of this device on it, that subtree is left to
+  that copy — two of them writing the same Pitch params would fight.
 - It finds Pitch devices at the top level of each child's chain (not buried
   inside racks).
 - Knob range is ±48 st (same as the native Pitch device).
 - API-driven changes land in Live's undo history, so twisting the knob a lot
   creates several undo steps — cosmetic, but worth knowing. The Master/Node
   pair avoids this if it ever bothers you.
-- Relative-mode details: each Pitch device / clip keeps its own baseline and
-  the knob adds to it. Change a child's setting by hand? Click Rescan so the
-  new value is captured as its baseline (rescanning keeps already-known
-  items' baselines, so it's always safe). Values clamp at the ends (±48 st).
-- Audio specifics: new/recorded clips aren't picked up until you Rescan.
+- No per-track offsets: a child can't sit at its own interval (an octave
+  below the rest, say) — that's the trade for everything always matching. Say
+  the word if you want that back as a toggle.
+- Audio specifics: new/recorded clips are picked up automatically.
   Clips warped in **Repitch** mode ignore Transpose (Live's own rule).
   Unwarped clips transpose with speed+pitch change (normal Live behavior).
 - After updating `GroupPitch.js`: if you use the unfrozen device, reload the
