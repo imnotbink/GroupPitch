@@ -36,13 +36,21 @@ API:
   (Browser → MIDI Effects → Pitch).
 - **Audio children:** it drives the Transpose of every audio clip on the
   track (session + arrangement) — the same semitone control you'd turn in
-  clip view.
+  clip view — but *relative to where the knob was when the clip first
+  appeared*. Bounced audio already has the group's transposition rendered
+  into it, so it lands at 0 and stays in key, then follows the knob from
+  there.
 
-The knob is **absolute**, not an offset. Every Pitch device and clip
-Transpose under the group is set to the knob value, so everything under the
-group is always in the same key as everything else. A track you just added, a
-track you duplicated from one that was already pitched, and a track whose
-Pitch device you nudged by hand all land in exactly the same place.
+The knob is **absolute** for MIDI: every Pitch device under the group is set
+to the knob value, so a track you just added, a track you duplicated from one
+that was already pitched, and a track whose Pitch device you nudged by hand
+all land in exactly the same place.
+
+Audio clips can't work that way. A Pitch device transposes live, but audio is
+already rendered — bounce a MIDI track to audio and the transposition is
+baked into the samples. Setting the new clip's Transpose to the knob as well
+would shift it twice. So a clip is pitched **relative to the knob position at
+the moment it first appeared**, which is precisely what's baked into it.
 
 The status line tells you what it's driving, e.g.:
 
@@ -55,11 +63,13 @@ The status line tells you what it's driving, e.g.:
 1. Drag `Group Pitch (Group).amxd` from this folder onto a **group** track.
    (First time, Live may take a moment to load the Max editor runtime.)
 2. Drop Ableton's stock **Pitch** on each child MIDI track.
-3. Turn **Semitones**. Every child transposes together, live. Clips look
-   untouched; nothing is repitched as audio.
+3. Turn the **Semitones** dial, or click **-1** / **1** for one semitone at a
+   time. Every child transposes together, live. Clips look untouched; nothing
+   is repitched as audio. The status line shows the current value and what's
+   being driven.
 4. Add or remove tracks, instruments, Pitch devices or clips freely — the
-   device watches the group and picks the change up by itself. (The **scan**
-   button is still there as a manual nudge; you shouldn't need it.)
+   device watches the group and picks the change up by itself. There's no
+   Rescan button on the panel any more; it isn't needed.
 
 ### Install permanently (recommended)
 
@@ -94,14 +104,26 @@ templates. If Live ever rejects one:
   that copy — two of them writing the same Pitch params would fight.
 - It finds Pitch devices at the top level of each child's chain (not buried
   inside racks).
-- Knob range is ±48 st (same as the native Pitch device).
+- Knob range is ±24 st. Narrower than the Pitch device's own ±48, so that
+  a trackpad drag covers 49 values instead of 97 and each step is reachable.
+  The **-1 / 1** buttons move exactly one semitone per click.
 - API-driven changes land in Live's undo history, so twisting the knob a lot
   creates several undo steps — cosmetic, but worth knowing. The Master/Node
   pair avoids this if it ever bothers you.
-- No per-track offsets: a child can't sit at its own interval (an octave
-  below the rest, say) — that's the trade for everything always matching. Say
-  the word if you want that back as a toggle.
-- Audio specifics: new/recorded clips are picked up automatically.
+- Per-track offsets: set one child's Pitch device by hand and that interval
+  is remembered. Knob at -6 with a track you dropped an octave sits at -18,
+  and it keeps that gap as you turn the knob. The status line counts how many
+  tracks have one, e.g. `4 trk (1 offset)`. To clear an offset, set that Pitch
+  device back to the knob value — it lands on 0 by itself.
+- Offsets belong to tracks you set by hand, not to new ones: a track you add
+  or duplicate while the knob is off zero starts at offset 0 and joins the
+  group, so a duplicate never inherits the pitch that was copied into it.
+- Audio specifics: new/recorded clips are picked up automatically. Bounce to
+  New Track / Freeze+Flatten inside the group lands in key and is not
+  re-shifted. The flip side: an audio loop you drag in while the knob is off
+  zero is assumed to already be in the group's key, so it won't be pulled
+  into it — drop loops in with the knob at 0, or set that clip's Transpose
+  once by hand.
   Clips warped in **Repitch** mode ignore Transpose (Live's own rule).
   Unwarped clips transpose with speed+pitch change (normal Live behavior).
 - After updating `GroupPitch.js`: if you use the unfrozen device, reload the

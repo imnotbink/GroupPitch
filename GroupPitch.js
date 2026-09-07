@@ -1,27 +1,42 @@
-// Group Pitch — single-device version, ABSOLUTE mode.
-// Sits on a Group track. The Semitones knob IS the pitch of everything under
-// it: every child MIDI track's native Pitch device and every child audio
-// clip's Transpose is set to the knob value. Not an offset, not per-track
-// baselines - one number, everything matches it, always.
+// Group Pitch — single-device version.
+// Sits on a Group track. The Semitones knob IS the pitch of every child MIDI
+// track: its native Pitch device is set to the knob value, absolutely. Not an
+// offset, not per-track baselines - one number, everything matches it.
+//
+// Audio clips work differently, and they have to. A Pitch device transposes
+// live, so the device can own that number outright. Audio is already rendered:
+// when you bounce a MIDI track to audio the transposition is baked into the
+// samples, so setting the new clip's Transpose to the knob as well shifts it
+// twice. A clip is therefore pitched RELATIVE to the knob position at the
+// moment it first appeared - which is exactly what got baked into it - so a
+// fresh bounce lands at 0 and stays in key, and still follows the knob after.
 //
 // It watches the group for changes and re-scans itself — adding a track, an
 // instrument, a Pitch device or a clip is picked up without touching anything.
 
 autowatch = 1;
-inlets = 1;
-outlets = 1;
+inlets = 2;   // 0 = dial + messages, 1 = step buttons (bare ints)
+outlets = 2;   // 0 = status text, 1 = new knob value (back into Semitones)
 
-var entries = [];    // {kind:"param"|"clip", key, api, label, min, max}
+var entries = [];    // {kind:"param"|"clip", key, api, label, min, max, base, origin, offset, wrote}
+var prevClips = {};  // clip key -> previous entry, so base/origin survive a rescan
+var prevParams = {}; // param key -> previous entry, so hand-set offsets survive a rescan
+var appliedKnob = 0; // knob at the last apply(), the anchor for spotting hand edits
+var scanIsInitial = false;
+var EPS = 0.0001;
 var lastVal = 0;
 var ready = false;
 var verbose = false;   // `verbose 1` to this js re-enables the scan-log.txt trace
 var myDeviceName = "";
+var KNOB_RANGE = 24;   // matches the Semitones dial in the patch
+var lastStatusText = "";
 var jsthis = this;
 
 var watchers = [];       // live observers, held in a global so they stay alive
 var armed = false;       // observers ignore their own first callback
 var scanning = false;
 var rescanTask = null, armTask = null;
+var lastApplyTime = 0;   // param callbacks inside this window are our own writes
 
 // live.thisdevice bang -> device fully loaded. The patch bangs the knob first
 // so lastVal already holds the restored knob value before we touch anything.
@@ -85,7 +100,15 @@ function doScan(wasInitial) {
     log("--- scan (" + (wasInitial ? "device load" : "auto") + ") "
         + new Date().toLocaleTimeString() + " knob=" + knobValue()
         + " remembered=" + lastVal + " known=" + entries.length);
+    checkHandEdits();      // catch anything moved by hand before we rebuild
     ready = false;
+    scanIsInitial = wasInitial;
+    prevClips = {};
+    prevParams = {};
+    for (var pc = 0; pc < entries.length; pc++) {
+        if (entries[pc].kind === "clip") prevClips[entries[pc].key] = entries[pc];
+        else prevParams[entries[pc].key] = entries[pc];
+    }
     entries = [];
     lastVal = knobValue();
 
@@ -166,21 +189,24 @@ function doScan(wasInitial) {
     ready = true;
     var msg;
     if (midiKids === 0 && audioClips === 0) {
-        msg = '"' + groupName + '": nothing to drive in this group';
+        msg = "nothing to drive";
     } else {
-        msg = '"' + groupName + '": ' + midiDriven + "/" + midiKids + " MIDI trk, "
-            + audioClips + " audio clip" + (audioClips === 1 ? "" : "s");
-        if (subGroups > 0) msg += " (across " + subGroups + " sub-group"
-                                 + (subGroups === 1 ? "" : "s") + ")";
+        msg = midiDriven + " trk";
+        var offs = 0;
+        for (var q = 0; q < entries.length; q++) {
+            if (entries[q].kind === "param" && entries[q].offset !== 0) offs++;
+        }
+        if (offs > 0) msg += " (" + offs + " offset)";
+        if (audioClips > 0) msg += ", " + audioClips + " clip" + (audioClips === 1 ? "" : "s");
+        if (subGroups > 0) msg += ", " + subGroups + " sub";
         var missing = midiKids - midiDriven;
-        if (missing > 0) msg += " - " + missing + " missing Pitch";
-        if (delegated > 0) msg += " - " + delegated + " sub-group"
-                               + (delegated === 1 ? "" : "s") + " on its own device";
+        if (missing > 0) msg += " - " + missing + " no Pitch";
+        if (delegated > 0) msg += " - " + delegated + " own dev";
     }
     status(msg);
     apply();
     for (var e = 0; e < entries.length; e++) {
-        log("  = " + entries[e].label + " now at " + clampFor(entries[e].min, entries[e].max));
+        log("  = " + entries[e].label + " now at " + targetFor(entries[e]));
     }
     watch(childPaths);
     flushLog();
@@ -200,12 +226,25 @@ function watch(childPaths) {
             addWatcher(childPaths[i], "devices");
             addWatcher(childPaths[i], "clip_slots");
         }
+        for (var p = 0; p < entries.length; p++) {
+            if (entries[p].kind === "param") addParamWatcher(entries[p]);
+        }
     } catch (err) { log("watch failed: " + err); }
 
     // Setting .property fires the callback once immediately; ignore that round.
     if (!armTask) armTask = new Task(function () { armed = true; });
     armTask.cancel();
     armTask.schedule(200);
+}
+
+// Broken out so each callback closes over its own entry.
+function addParamWatcher(e) {
+    try {
+        var w = new LiveAPI(function (args) { onParamValue(e, args); }, "id " + e.api.id);
+        if (!w || w.id == 0) return;
+        w.property = "value";
+        watchers.push(w);
+    } catch (err) { log("param watch failed: " + err); }
 }
 
 function addWatcher(path, prop) {
@@ -292,22 +331,115 @@ function addClip(c) {
     return true;
 }
 
-// Absolute mode means there is nothing to remember about an item: whatever it
-// reads right now is irrelevant, it is going to the knob value like everything
-// else. That is the whole point - a new track, a duplicated track and a track
-// someone nudged by hand all end up in exactly the same place.
+// A Pitch device carries an `offset`: how far the user has deliberately moved
+// that one track away from the group. Normally 0, so the track just sits at
+// the knob. Set a track's Pitch by hand and the offset is picked up (see
+// checkHandEdits) and honoured from then on - knob -6 with offset -12 puts
+// that track at -18, and the interval holds as the knob moves.
+//
+//   - a track discovered while running starts at offset 0 and joins the
+//     group. That is what stops a duplicated track from keeping the pitch
+//     that was copied into it.
+//   - at device load the saved value already reads knob + offset, so the
+//     offset is recovered as current - knob, restoring every interval.
+//   - to clear an offset, set that Pitch device back to the knob value; the
+//     offset lands on 0 by itself.
+//
+// A clip remembers two things, captured the first time it is ever seen: the
+// Transpose it arrived with (base) and where the knob was at that moment
+// (origin, i.e. how much pitch is already baked into the audio). It is then
+// driven to base + (knob - origin). A clip bounced at knob -6 arrives with -6
+// in the samples and 0 on the dial, and stays there until the knob moves.
 function pushEntry(kind, key, api, current, min, max, label) {
-    entries.push({ kind: kind, key: key, api: api, label: label, min: min, max: max });
-    log("  [" + label + "] reads " + current + " -> will be set to " + clampFor(min, max));
+    var e = { kind: kind, key: key, api: api, label: label, min: min, max: max,
+              base: 0, origin: 0, offset: 0, wrote: null };
+    if (kind === "param") {
+        var pp = prevParams[key];
+        if (pp !== undefined) {                // keep the interval across a rescan
+            e.offset = pp.offset;
+            e.wrote = pp.wrote;
+        } else if (scanIsInitial) {            // saved value already reads knob + offset
+            e.offset = current - lastVal;
+        }
+    }
+    if (kind === "clip") {
+        var prev = prevClips[key];
+        if (prev !== undefined) {          // seen before: keep what it arrived with
+            e.base = prev.base;
+            e.origin = prev.origin;
+        } else {                           // first sight: the knob is what is baked in
+            e.base = current;
+            e.origin = lastVal;
+        }
+    }
+    entries.push(e);
+    log("  [" + label + "] reads " + current + " -> will be set to " + targetFor(e)
+        + (kind === "clip" ? " (base " + e.base + " from knob " + e.origin + ")"
+                           : " (offset " + e.offset + ")"));
 }
 
-function clampFor(min, max) {
-    return Math.max(min, Math.min(max, lastVal));
+function targetFor(e) {
+    var want = (e.kind === "clip") ? (e.base + (lastVal - e.origin)) : (lastVal + e.offset);
+    return Math.max(e.min, Math.min(e.max, want));
+}
+
+function readValue(e) {
+    try {
+        return Number(e.api.get(e.kind === "param" ? "value" : "pitch_coarse")[0]);
+    } catch (err) { return null; }
+}
+
+// Anything a Pitch device reads that is not what we last wrote to it was put
+// there by hand, and that difference is a deliberate interval worth keeping.
+// This runs on an idle timer rather than inside apply(): during a drag Live
+// has not necessarily settled on the value we just set, and reading back too
+// early would misread our own write as an edit.
+function checkHandEdits() {
+    if (!ready) return;
+    var changed = 0;
+    for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        if (e.kind !== "param" || e.wrote === null) continue;
+        var cur = readValue(e);
+        if (cur === null || Math.abs(cur - e.wrote) < EPS) continue;
+        e.offset = cur - appliedKnob;
+        e.wrote = cur;
+        changed++;
+        log("  hand edit [" + e.label + "]: now " + cur + ", offset " + e.offset);
+    }
+    if (changed > 0) { render(); flushLog(); }
+}
+
+// Live pushes us every value change on a watched Pitch parameter, our own
+// writes included. A value that is not the one we just wrote came from the
+// user, and the gap from the knob is the interval they want kept.
+function onParamValue(e, args) {
+    if (!armed || scanning || !ready) return;
+    if (Date.now() - lastApplyTime < 300) return;   // our own write echoing back
+    var v = Number(args[1]);
+    if (isNaN(v) || e.wrote === null || Math.abs(v - e.wrote) < EPS) return;
+    e.offset = v - lastVal;
+    e.wrote = v;
+    log("  hand edit [" + e.label + "]: now " + v + ", offset " + e.offset);
+    render();
+    flushLog();
+}
+
+// One semitone per click, for trackpads. Sends the new value back into the
+// Semitones numbox (outlet 1), which re-enters through msg_int - so the knob,
+// Live's automation and the children all stay in step exactly as if it had
+// been dragged.
+function step(n) {
+    var v = knobValue() + Number(n);
+    v = Math.max(-KNOB_RANGE, Math.min(KNOB_RANGE, v));
+    outlet(1, v);
 }
 
 // Semitones knob
 function msg_int(v) {
+    if (inlet === 1) { step(v); return; }   // step button
     lastVal = v;
+    render();
     apply();
 }
 
@@ -319,14 +451,25 @@ function apply() {
     if (!ready) return;
     for (var i = 0; i < entries.length; i++) {
         var e = entries[i];
-        var v = clampFor(e.min, e.max);
+        var v = targetFor(e);
         try {
             if (e.kind === "param") e.api.set("value", v);
             else e.api.set("pitch_coarse", v);
+            e.wrote = v;      // remember it, so a later difference reads as a hand edit
         } catch (err) { /* item deleted - the watchers will trigger a rescan */ }
     }
+    appliedKnob = lastVal;
+    lastApplyTime = Date.now();
 }
 
+// A dial shows its number only while you drag it, so the status line carries
+// the current value at all times.
 function status(s) {
-    outlet(0, "set", s);
+    lastStatusText = s;
+    render();
+}
+
+function render() {
+    var v = (lastVal > 0 ? "+" : "") + lastVal;
+    outlet(0, "set", v + " st  ·  " + lastStatusText);
 }
