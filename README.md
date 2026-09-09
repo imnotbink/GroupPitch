@@ -99,16 +99,3 @@ tracking edits to the `.js` files — re-freeze after changing them.
 - `verbose 1` sent to the `js GroupPitch.js` object writes a `scan-log.txt`
   next to the device recording every scan: what it read, what it decided, and
   what it wrote. Useful when a pitch lands somewhere unexpected.
-
-## The older Master/Node pair
-
-`Group Pitch Master.amxd` and `Group Pitch Node.amxd` are an earlier, different
-design, kept for reference. The Master broadcasts a semitone value; a Node on
-each track transposes that track's MIDI note stream in real time, filtered by a
-Group ID. No Live API, no Pitch devices, no writes to your set.
-
-The group device plus Link now covers what they were for. The one thing they
-still do that it can't: transpose tracks with **no Pitch device on them at
-all**, since they rewrite the notes in flight rather than driving a device. If
-you never want stock Pitch devices on your tracks, that's the trade — at the
-cost of a Node on every single track.
