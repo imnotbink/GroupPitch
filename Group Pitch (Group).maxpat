@@ -60,8 +60,9 @@
      "id": "obj-8",
      "maxclass": "newobj",
      "numinlets": 1,
-     "numoutlets": 2,
+     "numoutlets": 3,
      "outlettype": [
+      "bang",
       "bang",
       "bang"
      ],
@@ -71,7 +72,7 @@
       47.0,
       22.0
      ],
-     "text": "t b b"
+     "text": "t b b b"
     }
    },
    {
@@ -136,7 +137,7 @@
     "box": {
      "id": "obj-4",
      "maxclass": "newobj",
-     "numinlets": 2,
+     "numinlets": 3,
      "numoutlets": 2,
      "outlettype": [
       "",
@@ -319,6 +320,39 @@
      ],
      "text": "one semitone at a time"
     }
+   },
+   {
+    "box": {
+     "id": "obj-30",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 1,
+     "outlettype": [
+      "bang"
+     ],
+     "patching_rect": [
+      440.0,
+      190.0,
+      150.0,
+      22.0
+     ],
+     "text": "r ___grouppitchlink___"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-31",
+     "maxclass": "newobj",
+     "numinlets": 1,
+     "numoutlets": 0,
+     "patching_rect": [
+      440.0,
+      20.0,
+      170.0,
+      22.0
+     ],
+     "text": "s ___grouppitchlink_req___"
+    }
    }
   ],
   "lines": [
@@ -451,6 +485,30 @@
      "source": [
       "obj-4",
       1
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-4",
+      2
+     ],
+     "source": [
+      "obj-30",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-31",
+      0
+     ],
+     "source": [
+      "obj-8",
+      2
      ]
     }
    }

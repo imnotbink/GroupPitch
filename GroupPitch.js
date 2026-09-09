@@ -15,7 +15,7 @@
 // instrument, a Pitch device or a clip is picked up without touching anything.
 
 autowatch = 1;
-inlets = 2;   // 0 = dial + messages, 1 = step buttons (bare ints)
+inlets = 3;   // 0 = dial + messages, 1 = step buttons, 2 = Link master
 outlets = 2;   // 0 = status text, 1 = new knob value (back into Semitones)
 
 var entries = [];    // {kind:"param"|"clip", key, api, label, min, max, base, origin, offset, wrote}
@@ -26,9 +26,18 @@ var scanIsInitial = false;
 var EPS = 0.0001;
 var lastVal = 0;
 var ready = false;
-var verbose = false;   // `verbose 1` to this js re-enables the scan-log.txt trace
+var verbose = false;   // `verbose 1` to this js writes a scan-log.txt trace
 var myDeviceName = "";
 var KNOB_RANGE = 24;   // matches the Semitones dial in the patch
+var lastLink = 0;       // last position heard from a Link master
+var linkSeen = false;   // its first value after load is already in our dial
+
+// The group's pitch is simply its own dial. A Link master does not add a
+// hidden layer beneath it - it turns this dial - so the device always shows
+// the real value.
+function groupPitch() {
+    return lastVal;
+}
 var lastStatusText = "";
 var jsthis = this;
 
@@ -41,6 +50,7 @@ var lastApplyTime = 0;   // param callbacks inside this window are our own write
 // live.thisdevice bang -> device fully loaded. The patch bangs the knob first
 // so lastVal already holds the restored knob value before we touch anything.
 function bang() {
+    linkSeen = false;
     scan(1);
 }
 
@@ -359,7 +369,7 @@ function pushEntry(kind, key, api, current, min, max, label) {
             e.offset = pp.offset;
             e.wrote = pp.wrote;
         } else if (scanIsInitial) {            // saved value already reads knob + offset
-            e.offset = current - lastVal;
+            e.offset = current - groupPitch();
         }
     }
     if (kind === "clip") {
@@ -369,7 +379,7 @@ function pushEntry(kind, key, api, current, min, max, label) {
             e.origin = prev.origin;
         } else {                           // first sight: the knob is what is baked in
             e.base = current;
-            e.origin = lastVal;
+            e.origin = groupPitch();
         }
     }
     entries.push(e);
@@ -379,7 +389,7 @@ function pushEntry(kind, key, api, current, min, max, label) {
 }
 
 function targetFor(e) {
-    var want = (e.kind === "clip") ? (e.base + (lastVal - e.origin)) : (lastVal + e.offset);
+    var want = (e.kind === "clip") ? (e.base + (groupPitch() - e.origin)) : (groupPitch() + e.offset);
     return Math.max(e.min, Math.min(e.max, want));
 }
 
@@ -418,11 +428,38 @@ function onParamValue(e, args) {
     if (Date.now() - lastApplyTime < 300) return;   // our own write echoing back
     var v = Number(args[1]);
     if (isNaN(v) || e.wrote === null || Math.abs(v - e.wrote) < EPS) return;
-    e.offset = v - lastVal;
+    e.offset = v - groupPitch();
     e.wrote = v;
     log("  hand edit [" + e.label + "]: now " + v + ", offset " + e.offset);
     render();
     flushLog();
+}
+
+// A Link master on the master track broadcasts its dial position; each Group
+// Pitch turns that into a nudge of its OWN dial, by however far the Link moved.
+// The groups move together, each keeps its own setting, and the number on the
+// device is the whole truth - nothing hidden underneath it.
+//
+// The first value heard after a load is recorded but not applied: the dial was
+// saved with that nudge already in it. That holds whichever order the devices
+// load in, which is why there is no timing window here any more.
+function setLink(v) {
+    var n = Number(v);
+    if (isNaN(n)) return;
+    if (!linkSeen) {
+        linkSeen = true;
+        lastLink = n;
+        log("link master at " + n + " - already in our dial, not moving");
+        flushLog();
+        return;
+    }
+    var delta = n - lastLink;
+    lastLink = n;
+    if (delta === 0) return;
+    var nv = Math.max(-KNOB_RANGE, Math.min(KNOB_RANGE, lastVal + delta));
+    log("link moved " + (delta > 0 ? "+" : "") + delta + " -> our dial " + nv);
+    flushLog();
+    outlet(1, nv);          // move our own dial; it returns through msg_int
 }
 
 // One semitone per click, for trackpads. Sends the new value back into the
@@ -438,6 +475,7 @@ function step(n) {
 // Semitones knob
 function msg_int(v) {
     if (inlet === 1) { step(v); return; }   // step button
+    if (inlet === 2) { setLink(v); return; }
     lastVal = v;
     render();
     apply();
@@ -458,7 +496,7 @@ function apply() {
             e.wrote = v;      // remember it, so a later difference reads as a hand edit
         } catch (err) { /* item deleted - the watchers will trigger a rescan */ }
     }
-    appliedKnob = lastVal;
+    appliedKnob = groupPitch();
     lastApplyTime = Date.now();
 }
 
