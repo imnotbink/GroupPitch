@@ -108,6 +108,20 @@ function nudge(d) {
     return true;
 }
 
+// One semitone per press, from the +/- buttons. Debounced because a Live
+// button can report both press and release, and a double step per click would
+// be worse than no buttons at all.
+var lastBump = 0;
+
+function bump(n) {
+    var now = Date.now();
+    if (now - lastBump < 60) return;
+    lastBump = now;
+    if (!nudge(Number(n) > 0 ? 1 : -1)) return;
+    mgraphics.redraw();
+    outlet(0, val);
+}
+
 // from the hidden live.dial, via `prepend setval` - display only, never echoes
 function setval(v) {
     var n = Number(v);

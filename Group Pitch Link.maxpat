@@ -30,7 +30,7 @@
   "boxanimatetime": 200,
   "enablehscroll": 1,
   "enablevscroll": 1,
-  "devicewidth": 144.0,
+  "devicewidth": 176.0,
   "description": "Group Pitch Link",
   "digest": "Transpose every Group Pitch group together",
   "tags": "pitch group transpose",
@@ -200,6 +200,132 @@
      ],
      "text": "prepend setval"
     }
+   },
+   {
+    "box": {
+     "id": "obj-12",
+     "maxclass": "live.text",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "mode": 0,
+     "parameter_enable": 1,
+     "presentation": 1,
+     "text": "+",
+     "varname": "Up",
+     "presentation_rect": [
+      138.0,
+      26.0,
+      24.0,
+      24.0
+     ],
+     "patching_rect": [
+      560.0,
+      66.0,
+      40.0,
+      20.0
+     ],
+     "annotation": "Nudge the Group Pitch Link one semitone. Map a key to this with Cmd-K.",
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Up",
+       "parameter_shortname": "Up",
+       "parameter_type": 2,
+       "parameter_mmin": 0,
+       "parameter_mmax": 1,
+       "parameter_enum": [
+        "off",
+        "on"
+       ],
+       "parameter_info": "Nudge the Group Pitch Link one semitone. Map a key to this with Cmd-K.",
+       "parameter_initial_enable": 0
+      }
+     }
+    }
+   },
+   {
+    "box": {
+     "id": "obj-13",
+     "maxclass": "live.text",
+     "numinlets": 1,
+     "numoutlets": 2,
+     "outlettype": [
+      "",
+      ""
+     ],
+     "mode": 0,
+     "parameter_enable": 1,
+     "presentation": 1,
+     "text": "-",
+     "varname": "Down",
+     "presentation_rect": [
+      138.0,
+      62.0,
+      24.0,
+      24.0
+     ],
+     "patching_rect": [
+      560.0,
+      102.0,
+      40.0,
+      20.0
+     ],
+     "annotation": "Nudge the Group Pitch Link one semitone. Map a key to this with Cmd-K.",
+     "saved_attribute_attributes": {
+      "valueof": {
+       "parameter_longname": "Down",
+       "parameter_shortname": "Down",
+       "parameter_type": 2,
+       "parameter_mmin": 0,
+       "parameter_mmax": 1,
+       "parameter_enum": [
+        "off",
+        "on"
+       ],
+       "parameter_info": "Nudge the Group Pitch Link one semitone. Map a key to this with Cmd-K.",
+       "parameter_initial_enable": 0
+      }
+     }
+    }
+   },
+   {
+    "box": {
+     "id": "obj-14",
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      560.0,
+      110.0,
+      60.0,
+      22.0
+     ],
+     "text": "bump 1"
+    }
+   },
+   {
+    "box": {
+     "id": "obj-15",
+     "maxclass": "message",
+     "numinlets": 2,
+     "numoutlets": 1,
+     "outlettype": [
+      ""
+     ],
+     "patching_rect": [
+      630.0,
+      110.0,
+      60.0,
+      22.0
+     ],
+     "text": "bump -1"
+    }
    }
   ],
   "lines": [
@@ -296,6 +422,54 @@
      "source": [
       "obj-5",
       1
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-14",
+      0
+     ],
+     "source": [
+      "obj-12",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-15",
+      0
+     ],
+     "source": [
+      "obj-13",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-7",
+      0
+     ],
+     "source": [
+      "obj-14",
+      0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-7",
+      0
+     ],
+     "source": [
+      "obj-15",
+      0
      ]
     }
    }

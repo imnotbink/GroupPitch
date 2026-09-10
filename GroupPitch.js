@@ -41,6 +41,7 @@ function groupPitch() {
 var lastStatusText = "";
 var jsthis = this;
 
+var MAX_WATCHERS = 400;   // a huge set must not drown Live in observers
 var watchers = [];       // live observers, held in a global so they stay alive
 var armed = false;       // observers ignore their own first callback
 var scanning = false;
@@ -163,6 +164,7 @@ function doScan(wasInitial) {
     var midiKids = 0, midiDriven = 0, audioClips = 0;
     var subGroups = 0, delegated = 0;
     var childPaths = [];
+    var audioPaths = [];
     var stack = (kids[groupId] || []).slice();
     var guard = nTracks + 1;                      // can't visit more than every track
 
@@ -192,6 +194,7 @@ function doScan(wasInitial) {
             midiKids++;
             if (addPitchParam(t, node.path)) midiDriven++;
         } else {
+            audioPaths.push(node.path);
             audioClips += addAudioClips(t, node.path);
         }
     }
@@ -218,7 +221,7 @@ function doScan(wasInitial) {
     for (var e = 0; e < entries.length; e++) {
         log("  = " + entries[e].label + " now at " + targetFor(entries[e]));
     }
-    watch(childPaths);
+    watch(childPaths, audioPaths);
     flushLog();
 }
 
@@ -227,19 +230,32 @@ function doScan(wasInitial) {
 // Anything that could add or remove something we drive triggers a rescan, so
 // the device keeps up on its own.
 
-function watch(childPaths) {
+function watch(childPaths, audioPaths) {
     unwatch();
     armed = false;
-    try {
-        addWatcher("live_set", "tracks");
-        for (var i = 0; i < childPaths.length; i++) {
-            addWatcher(childPaths[i], "devices");
-            addWatcher(childPaths[i], "clip_slots");
+    addWatcher("live_set", "tracks");
+    for (var i = 0; i < childPaths.length; i++) {
+        addWatcher(childPaths[i], "devices");
+        addWatcher(childPaths[i], "clip_slots");
+    }
+    // `clip_slots` only covers the Session grid changing shape - it does not
+    // fire when a clip is dropped into an existing slot, and it knows nothing
+    // about the Arrangement. Splitting an arrangement clip used to go
+    // unnoticed entirely, leaving the new half unpitched until some unrelated
+    // change forced a scan, by which point its stale Transpose was taken as
+    // its baseline. So audio tracks get watched at the clip level too.
+    for (var a = 0; a < audioPaths.length; a++) {
+        addWatcher(audioPaths[a], "arrangement_clips");
+        var t = new LiveAPI(audioPaths[a]);
+        var nSlots = Number(t.getcount("clip_slots"));
+        for (var s = 0; s < nSlots && watchers.length < MAX_WATCHERS; s++) {
+            addWatcher(audioPaths[a] + " clip_slots " + s, "has_clip");
         }
-        for (var p = 0; p < entries.length; p++) {
-            if (entries[p].kind === "param") addParamWatcher(entries[p]);
-        }
-    } catch (err) { log("watch failed: " + err); }
+    }
+    for (var p = 0; p < entries.length; p++) {
+        if (entries[p].kind === "param") addParamWatcher(entries[p]);
+    }
+    log("  watching " + watchers.length + " object(s)");
 
     // Setting .property fires the callback once immediately; ignore that round.
     if (!armTask) armTask = new Task(function () { armed = true; });
@@ -258,10 +274,15 @@ function addParamWatcher(e) {
 }
 
 function addWatcher(path, prop) {
-    var w = new LiveAPI(onLiveChange, path);
-    if (!w || w.id == 0) return;
-    w.property = prop;
-    watchers.push(w);
+    if (watchers.length >= MAX_WATCHERS) return;
+    try {
+        var w = new LiveAPI(onLiveChange, path);
+        if (!w || w.id == 0) return;
+        w.property = prop;
+        watchers.push(w);
+    } catch (err) {
+        log("  cannot watch " + prop + " on " + path);   // older Live, or gone
+    }
 }
 
 function unwatch() {

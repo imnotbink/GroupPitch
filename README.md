@@ -45,6 +45,8 @@ still follows the dial afterwards.
 
 **It keeps up on its own.** Adding or removing tracks, instruments, Pitch
 devices or clips is picked up automatically — there's no rescan to remember.
+That includes splitting or duplicating clips in the Arrangement, and dropping
+or recording a clip into a Session slot.
 
 ## The panel
 
@@ -62,7 +64,16 @@ together and keep the gap. Because it turns the real dials, there's no hidden
 layer: what each device shows is what it's doing.
 
 Its knob snaps to whole semitones (11px of drag each, shift-drag for finer),
-shows the value in the middle, and double-clicks back to 0.
+shows the value in the middle, and double-clicks back to 0. The **+ / -**
+buttons beside it step one semitone per press.
+
+**Arrow-key control:** Live owns the keyboard — arrow keys go to Live's own
+navigation and never reach a device — so this goes through Live's Key Map
+rather than by clicking the knob first. Hit **Cmd-K**, click the **+** button,
+press the key you want, then the same for **-**, and Cmd-K again to exit. Any
+key works; note that a key mapped this way is taken over globally, so binding
+the actual arrow keys costs you arrow-key navigation everywhere in Live.
+Something like `=` and `-` avoids that.
 
 ## Install
 
