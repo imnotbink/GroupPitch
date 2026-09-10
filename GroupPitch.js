@@ -368,9 +368,12 @@ function addClip(c) {
 // checkHandEdits) and honoured from then on - knob -6 with offset -12 puts
 // that track at -18, and the interval holds as the knob moves.
 //
-//   - a track discovered while running starts at offset 0 and joins the
-//     group. That is what stops a duplicated track from keeping the pitch
-//     that was copied into it.
+//   - a track discovered while running is read off what its Pitch device
+//     says. A stock Pitch device is at 0, which means "no opinion", so a
+//     genuinely new track takes offset 0 and joins the group's key. Any other
+//     value was put there deliberately or copied from a track that had it -
+//     duplicate a track sitting at -18 and it stays at -18 - so that becomes
+//     its offset and the interval survives.
 //   - at device load the saved value already reads knob + offset, so the
 //     offset is recovered as current - knob, restoring every interval.
 //   - to clear an offset, set that Pitch device back to the knob value; the
@@ -389,7 +392,12 @@ function pushEntry(kind, key, api, current, min, max, label) {
         if (pp !== undefined) {                // keep the interval across a rescan
             e.offset = pp.offset;
             e.wrote = pp.wrote;
-        } else if (scanIsInitial) {            // saved value already reads knob + offset
+        } else if (scanIsInitial || current !== 0) {
+            // On load the saved value already reads knob + offset. And a track
+            // we have never seen that is not at 0 is carrying a pitch someone
+            // meant - most often a duplicate of a track with its own interval.
+            // Either way the number in front of us is the one to keep, so the
+            // offset is what it takes to leave it exactly where it is.
             e.offset = current - groupPitch();
         }
     }

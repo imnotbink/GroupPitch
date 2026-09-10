@@ -30,11 +30,15 @@ API instead:
   of instruments is driven all the way down.
 
 The dial is **absolute**: every Pitch device under the group is set to its
-value. A track you just added, one you duplicated from an already-pitched
-track, and one whose Pitch device you nudged all land in the same place. Set
-a track's Pitch by hand and that becomes its own interval, kept on top of the
-dial from then on — knob at -6 with a track offset of -12 puts that track at
--18, and it tracks the knob from there.
+value. Set one track's Pitch by hand and that becomes its own interval, kept
+on top of the dial from then on — dial at -6 with a track offset of -12 puts
+that track at -18, and it holds that interval as the dial moves.
+
+When it meets a track for the first time it reads the Pitch device to decide.
+A stock Pitch device sits at 0, which means "no opinion", so a genuinely new
+track joins the group's key. Any other value was put there on purpose or
+copied from a track that had it — duplicate a track sitting at -18 and it
+stays at -18, interval intact.
 
 Audio clips are the exception, and have to be. A Pitch device transposes live,
 but audio is already rendered: bounce a MIDI track to audio and the group's
