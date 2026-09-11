@@ -162,8 +162,9 @@
      "id": "obj-7",
      "maxclass": "jsui",
      "numinlets": 1,
-     "numoutlets": 1,
+     "numoutlets": 2,
      "outlettype": [
+      "",
       ""
      ],
      "filename": "GroupPitchKnob.js",
@@ -368,18 +369,6 @@
    {
     "patchline": {
      "destination": [
-      "obj-4",
-      0
-     ],
-     "source": [
-      "obj-3",
-      0
-     ]
-    }
-   },
-   {
-    "patchline": {
-     "destination": [
       "obj-11",
       0
      ],
@@ -470,6 +459,18 @@
      "source": [
       "obj-15",
       0
+     ]
+    }
+   },
+   {
+    "patchline": {
+     "destination": [
+      "obj-4",
+      0
+     ],
+     "source": [
+      "obj-7",
+      1
      ]
     }
    }

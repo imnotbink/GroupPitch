@@ -65,7 +65,9 @@ being driven: `+3 st · 4 trk`. Warnings appear only when something's off, e.g.
 Group Pitch device in the set by however far you move it — you watch the group
 dials move. Your 808 group can sit at -2 and your melody group at 0; both drop
 together and keep the gap. Because it turns the real dials, there's no hidden
-layer: what each device shows is what it's doing.
+layer: what each device shows is what it's doing. Link sends each *move*
+rather than its position, so every group shifts by exactly the same amount
+regardless of which device happened to load first.
 
 Its knob snaps to whole semitones (11px of drag each, shift-drag for finer),
 shows the value in the middle, and double-clicks back to 0. The **+ / -**

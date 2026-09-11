@@ -29,8 +29,6 @@ var ready = false;
 var verbose = false;   // `verbose 1` to this js writes a scan-log.txt trace
 var myDeviceName = "";
 var KNOB_RANGE = 24;   // matches the Semitones dial in the patch
-var lastLink = 0;       // last position heard from a Link master
-var linkSeen = false;   // its first value after load is already in our dial
 
 // The group's pitch is simply its own dial. A Link master does not add a
 // hidden layer beneath it - it turns this dial - so the device always shows
@@ -51,7 +49,6 @@ var lastApplyTime = 0;   // param callbacks inside this window are our own write
 // live.thisdevice bang -> device fully loaded. The patch bangs the knob first
 // so lastVal already holds the restored knob value before we touch anything.
 function bang() {
-    linkSeen = false;
     scan(1);
 }
 
@@ -111,7 +108,9 @@ function doScan(wasInitial) {
     log("--- scan (" + (wasInitial ? "device load" : "auto") + ") "
         + new Date().toLocaleTimeString() + " knob=" + knobValue()
         + " remembered=" + lastVal + " known=" + entries.length);
-    checkHandEdits();      // catch anything moved by hand before we rebuild
+    if (Date.now() - lastApplyTime >= QUIET_MS) {
+        checkHandEdits();  // catch anything moved by hand before we rebuild
+    }
     ready = false;
     scanIsInitial = wasInitial;
     prevClips = {};
@@ -452,43 +451,55 @@ function checkHandEdits() {
 // Live pushes us every value change on a watched Pitch parameter, our own
 // writes included. A value that is not the one we just wrote came from the
 // user, and the gap from the knob is the interval they want kept.
+// Live reports every change to a watched Pitch parameter, ours included, and
+// under a fast burst of writes it can deliver one late, carrying a value we
+// have already moved past. Taking that payload at face value is what gave one
+// group two semitones too many: our own stale write was read as the user
+// moving that track, and baked in as its offset.
+//
+// So the callback only says "look again soon". The actual judgement is made by
+// checkHandEdits, from a fresh read, and only once nothing has been written for
+// a moment - by then Live has settled and a difference can only be a real edit.
+var editTask = null;
+var QUIET_MS = 400;
+
 function onParamValue(e, args) {
     if (!armed || scanning || !ready) return;
-    if (Date.now() - lastApplyTime < 300) return;   // our own write echoing back
-    var v = Number(args[1]);
-    if (isNaN(v) || e.wrote === null || Math.abs(v - e.wrote) < EPS) return;
-    e.offset = v - groupPitch();
-    e.wrote = v;
-    log("  hand edit [" + e.label + "]: now " + v + ", offset " + e.offset);
-    render();
-    flushLog();
+    scheduleEditCheck();
 }
 
-// A Link master on the master track broadcasts its dial position; each Group
-// Pitch turns that into a nudge of its OWN dial, by however far the Link moved.
-// The groups move together, each keeps its own setting, and the number on the
-// device is the whole truth - nothing hidden underneath it.
+function scheduleEditCheck() {
+    if (!editTask) editTask = new Task(function () { runEditCheck(); });
+    editTask.cancel();
+    editTask.schedule(QUIET_MS + 50);
+}
+
+function runEditCheck() {
+    if (Date.now() - lastApplyTime < QUIET_MS) { scheduleEditCheck(); return; }
+    checkHandEdits();
+}
+
+// A Link master broadcasts how far its knob just moved, and this moves our own
+// dial by that much. It used to broadcast its position instead, which meant
+// each group had to learn where the Link started - and a group that loaded
+// before the Link never did, so its first real move was swallowed as the
+// baseline and it ended up a semitone behind the others. A change carries no
+// such history, so every group moves identically whatever order things load in.
 //
-// The first value heard after a load is recorded but not applied: the dial was
-// saved with that nudge already in it. That holds whichever order the devices
-// load in, which is why there is no timing window here any more.
+// lastVal is updated and applied right here rather than waiting for the dial's
+// round trip back through msg_int, so a burst of fast steps cannot read the
+// same stale value twice and drop one.
 function setLink(v) {
-    var n = Number(v);
-    if (isNaN(n)) return;
-    if (!linkSeen) {
-        linkSeen = true;
-        lastLink = n;
-        log("link master at " + n + " - already in our dial, not moving");
-        flushLog();
-        return;
-    }
-    var delta = n - lastLink;
-    lastLink = n;
-    if (delta === 0) return;
-    var nv = Math.max(-KNOB_RANGE, Math.min(KNOB_RANGE, lastVal + delta));
-    log("link moved " + (delta > 0 ? "+" : "") + delta + " -> our dial " + nv);
+    var d = Number(v);
+    if (isNaN(d) || d === 0) return;
+    var nv = Math.max(-KNOB_RANGE, Math.min(KNOB_RANGE, lastVal + d));
+    if (nv === lastVal) return;
+    log("link " + (d > 0 ? "+" : "") + d + " -> dial " + nv);
     flushLog();
-    outlet(1, nv);          // move our own dial; it returns through msg_int
+    lastVal = nv;
+    render();
+    apply();
+    outlet(1, nv);          // bring the visible dial along; its echo is a no-op
 }
 
 // One semitone per click, for trackpads. Sends the new value back into the
@@ -505,6 +516,7 @@ function step(n) {
 function msg_int(v) {
     if (inlet === 1) { step(v); return; }   // step button
     if (inlet === 2) { setLink(v); return; }
+    if (ready && v === lastVal) { render(); return; }   // echo of our own move
     lastVal = v;
     render();
     apply();

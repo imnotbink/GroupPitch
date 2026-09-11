@@ -6,10 +6,16 @@
 // it in the patch, which keeps automation and MIDI mapping working: this sends
 // it values, and it sends back "setval N" (which never re-outputs, so there is
 // no feedback loop).
+//
+// What goes out to the Group Pitch devices is the CHANGE, never the position.
+// A position would need every group to agree on where "zero" was, and whether
+// a group had heard that depended on which device loaded first - which is how
+// one group ended up a semitone behind another. A change needs no agreement:
+// each group just moves its own dial by it.
 
 autowatch = 1;
 inlets = 1;
-outlets = 1;
+outlets = 2;   // 0 = new value to the hidden live.dial, 1 = change to the groups
 
 mgraphics.init();
 mgraphics.relative_coords = 0;
@@ -18,6 +24,7 @@ mgraphics.autofill = 0;
 var jsthis = this;
 var RANGE = 12;            // matches the hidden live.dial
 var val = 0;
+var primed = false;        // the first value after load is where we are, not a move
 
 // Trackpad feel: a fixed number of pixels buys exactly one semitone, so the
 // knob detents instead of sliding. Nothing is scaled by the dial's size or by
@@ -85,27 +92,32 @@ function ondrag(x, y, but, cmd, shift) {
     var stepPx = shift ? PX_PER_STEP * 3 : PX_PER_STEP;   // shift = finer still
     accum += (lastY - y);
     lastY = y;
-    var moved = false;
-    while (accum >= stepPx)  { accum -= stepPx; if (nudge(1))  moved = true; }
-    while (accum <= -stepPx) { accum += stepPx; if (nudge(-1)) moved = true; }
-    if (moved) {
-        mgraphics.redraw();
-        outlet(0, val);
-    }
+    var target = val;
+    while (accum >= stepPx)  { accum -= stepPx; target++; }
+    while (accum <= -stepPx) { accum += stepPx; target--; }
+    propose(target);
 }
 
 function ondblclick() {
-    if (val === 0) return;
-    val = 0;
-    mgraphics.redraw();
-    outlet(0, val);
+    propose(0);
 }
 
-function nudge(d) {
-    var nv = Math.max(-RANGE, Math.min(RANGE, val + d));
-    if (nv === val) return false;
+function clamp(n) {
+    return Math.max(-RANGE, Math.min(RANGE, n));
+}
+
+// Every change this face makes goes through here. `val` is updated before the
+// live.dial round trip, so its echo back through setval() matches and is
+// ignored - no step can be counted twice, and none is lost if Live defers it.
+function propose(nv) {
+    nv = clamp(nv);
+    primed = true;
+    if (nv === val) return;
+    var d = nv - val;
     val = nv;
-    return true;
+    mgraphics.redraw();
+    outlet(1, d);          // move every group by the difference
+    outlet(0, nv);         // and keep the Live parameter in step
 }
 
 // One semitone per press, from the +/- buttons. Debounced because a Live
@@ -117,17 +129,25 @@ function bump(n) {
     var now = Date.now();
     if (now - lastBump < 60) return;
     lastBump = now;
-    if (!nudge(Number(n) > 0 ? 1 : -1)) return;
-    mgraphics.redraw();
-    outlet(0, val);
+    propose(val + (Number(n) > 0 ? 1 : -1));
 }
 
-// from the hidden live.dial, via `prepend setval` - display only, never echoes
+// From the hidden live.dial, via `prepend setval`. Our own changes arrive back
+// here already matching `val` and stop. Anything else moved the parameter from
+// outside - automation, a MIDI mapping, undo - and the groups must follow it.
 function setval(v) {
     var n = Number(v);
     if (isNaN(n)) return;
-    n = Math.max(-RANGE, Math.min(RANGE, Math.round(n)));
+    n = clamp(Math.round(n));
+    if (!primed) {             // restored at load: this is where we already are
+        primed = true;
+        val = n;
+        mgraphics.redraw();
+        return;
+    }
     if (n === val) return;
+    var d = n - val;
     val = n;
     mgraphics.redraw();
+    outlet(1, d);
 }
